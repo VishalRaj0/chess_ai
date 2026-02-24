@@ -388,6 +388,15 @@ body {
 }
 
 /* === Buttons === */
+.topbar-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.hidden {
+    display: none !important;
+}
+
 .btn-primary {
     padding: 8px 18px;
     background: linear-gradient(135deg, #238636, #2ea043);
@@ -409,6 +418,53 @@ body {
 
 .btn-primary:active {
     transform: translateY(0);
+}
+
+.btn-danger {
+    padding: 8px 18px;
+    background: linear-gradient(135deg, #da3633, #f85149);
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(218, 54, 51, 0.3);
+}
+
+.btn-danger:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(218, 54, 51, 0.4);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+@keyframes gamingPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.7);
+        transform: scale(1);
+    }
+
+    50% {
+        box-shadow: 0 0 20px 10px rgba(88, 166, 255, 0);
+        transform: scale(1.05);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(88, 166, 255, 0);
+        transform: scale(1);
+    }
+}
+
+.btn-highlight {
+    animation: gamingPulse 1.5s infinite;
+    background: linear-gradient(135deg, #1f6feb, #58a6ff);
+    border-color: #79b8ff;
+    color: white;
 }
 
 /* === Side Panel === */

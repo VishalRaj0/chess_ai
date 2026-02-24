@@ -63,6 +63,8 @@ async function startGame(color) {
     badge.textContent = color === 'white' ? '♔ Playing as White' : '♚ Playing as Black';
     badge.className = `color-badge ${color}`;
 
+    document.getElementById('new-game-btn').classList.remove('btn-highlight');
+
     buildStaticLabels();
     renderBoard();
     setStatus('Connecting to server…', '');
@@ -98,6 +100,8 @@ async function connectToBackend(color) {
         addChatMsg('coach', color === 'white'
             ? "Hello! You play White — move a pawn to start, then ask me anything!"
             : "Hello! You play Black — Stockfish just opened for White. It's your turn!");
+
+        document.getElementById('surrender-btn').classList.remove('hidden');
     } catch (err) {
         setStatus('Cannot reach backend. Is Django running on port 8000?', 'gameover');
         console.error('Backend error:', err);
@@ -274,6 +278,8 @@ async function executePlayerMove(from, to) {
             const resultMsg = data.result || `Game over — ${data.winner} wins!`;
             setStatus(resultMsg, 'gameover');
             addChatMsg('coach', `Game over! ${resultMsg}`);
+            document.getElementById('surrender-btn').classList.add('hidden');
+            document.getElementById('new-game-btn').classList.add('btn-highlight');
         } else {
             const inCheck = data.in_check || chess.in_check();
             const yourTurn = humanColor === 'white' ? 'Your turn (White)' : 'Your turn (Black)';
@@ -361,12 +367,43 @@ async function sendChat(message) {
     }
 }
 
-// ─── New Game button ──────────────────────────────────────────────────────────
+// ─── Topbar Buttons ─────────────────────────────────────────────────────────
 
 document.getElementById('new-game-btn').addEventListener('click', () => {
     if (isWaiting) return;
     showModal(); // Let user pick color again
 });
+
+document.getElementById('surrender-btn').addEventListener('click', surrenderGame);
+
+async function surrenderGame() {
+    if (!gameId || gameOver || isWaiting) return;
+    if (!confirm("Are you sure you want to surrender?")) return;
+
+    isWaiting = true;
+    try {
+        const res = await fetch(`${API}/surrender/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game_id: gameId }),
+        });
+        const data = await res.json();
+
+        if (data.error) {
+            setStatus(`Error: ${data.error}`, 'gameover');
+        } else {
+            gameOver = true;
+            setStatus(data.message, 'gameover');
+            addChatMsg('coach', `You surrendered. Stockfish wins!`);
+            document.getElementById('surrender-btn').classList.add('hidden');
+            document.getElementById('new-game-btn').classList.add('btn-highlight');
+        }
+    } catch (err) {
+        setStatus('Connection error — is the backend running?', 'gameover');
+        console.error(err);
+    }
+    isWaiting = false;
+}
 
 // ─── Chat form ────────────────────────────────────────────────────────────────
 

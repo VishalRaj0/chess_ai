@@ -172,6 +172,35 @@ class PlayChess(APIView):
         })
 
 
+# ─── Surrender Game ───────────────────────────────────────────────────────────
+
+class SurrenderGame(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        game_id = request.data.get("game_id")
+        if not game_id:
+            return Response({"error": "game_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            game = Game.objects.get(id=game_id)
+        except Game.DoesNotExist:
+            return Response({"error": "Game not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if game.is_finished:
+            return Response({"error": "Game is already finished"}, status=status.HTTP_400_BAD_REQUEST)
+
+        game.is_finished = True
+        game.winner = 'stockfish'
+        game.save()
+
+        return Response({
+            "message": "You surrendered. Stockfish wins!",
+            "game_over": True,
+            "winner": "stockfish"
+        })
+
+
 # ─── Get Game ─────────────────────────────────────────────────────────────────
 
 class GetGame(APIView):

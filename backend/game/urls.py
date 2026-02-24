@@ -6,5 +6,6 @@ urlpatterns = [
     path('api/games/list/', views.ListGames.as_view(), name='list_games'),
     path('api/games/<int:game_id>/', views.GetGame.as_view(), name='get_game'),
     path('api/play/', views.PlayChess.as_view(), name='play_chess'),
+    path('api/surrender/', views.SurrenderGame.as_view(), name='surrender_game'),
     path('api/chat/', views.ChatbotView.as_view(), name='chatbot'),
 ]
