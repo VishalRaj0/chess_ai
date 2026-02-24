@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>♟ Chess AI with Coach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <header class="app-header">
+    <div class="header-left">
+      <span class="logo">♟</span>
+      <div>
+        <h1>Chess AI</h1>
+        <p>Play against Stockfish · Get tips from your coach</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- Board Section -->
+    <section class="board-section">
+      <div class="board-topbar">
+        <div id="status-bar" class="status-bar">Connecting...</div>
+        <button id="new-game-btn" class="btn-primary">New Game</button>
+      </div>
+
+      <div class="board-area">
+        <div class="rank-labels" id="rank-labels"></div>
+        <div id="board" class="board"></div>
+      </div>
+
+      <div class="file-labels" id="file-labels"></div>
+    </section>
+
+    <!-- Side Panel -->
+    <aside class="side-panel">
+
+      <div class="panel-box move-history-box">
+        <div class="panel-box-header">
+          <h3>Move History</h3>
+          <span id="move-count" class="badge">0</span>
+        </div>
+        <div id="move-list" class="move-list"></div>
+      </div>
+
+      <div class="panel-box chat-box">
+        <div class="panel-box-header">
+          <h3>♜ Chess Coach</h3>
+          <span class="badge ai-badge">AI</span>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="quick-prompts">
+          <button class="quick-btn" data-msg="Give me a tip for this position">Tip</button>
+          <button class="quick-btn" data-msg="What's the best move I can make?">Best Move</button>
+          <button class="quick-btn" data-msg="Did I make any mistakes?">Mistakes</button>
+          <button class="quick-btn" data-msg="Explain the current position">Explain</button>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Ask your coach..." autocomplete="off" />
+          <button type="submit" class="btn-send">↑</button>
+        </form>
+      </div>
+
+    </aside>
+  </main>
+
+  <!--
+    Load script.js as an ES module so it can import Chess from the CDN.
+    The CDN build uses ES module export syntax.
+  -->
+  <script type="module" src="script.js"></script>
+</body>
+
+</html>
