@@ -12,7 +12,6 @@ class GameAdmin(admin.ModelAdmin):
 
 @admin.register(Move)
 class MoveAdmin(admin.ModelAdmin):
-    list_display = ['id', 'game', 'move_number', 'move_notation', 'player', 'created_at']
-    list_filter = ['player', 'created_at']
+    list_display = ['id', 'game', 'move_number', 'move_notation', 'player']
+    list_filter = ['player']
     search_fields = ['game__id', 'move_notation']
-    readonly_fields = ['created_at']

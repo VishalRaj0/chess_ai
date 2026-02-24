@@ -12,6 +12,27 @@
 
 <body>
 
+  <!-- ── Color Picker Modal ─────────────────────────────────── -->
+  <div id="color-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <h2 class="modal-title">♟ New Game</h2>
+      <p class="modal-subtitle">Choose your side</p>
+      <div class="color-choices">
+        <button class="color-choice" id="pick-white">
+          <span class="choice-piece">♔</span>
+          <span class="choice-label">White</span>
+          <span class="choice-note">You move first</span>
+        </button>
+        <button class="color-choice" id="pick-black">
+          <span class="choice-piece">♚</span>
+          <span class="choice-label">Black</span>
+          <span class="choice-note">Stockfish moves first</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── App ───────────────────────────────────────────────── -->
   <header class="app-header">
     <div class="header-left">
       <span class="logo">♟</span>
@@ -20,28 +41,24 @@
         <p>Play against Stockfish · Get tips from your coach</p>
       </div>
     </div>
+    <div id="color-badge" class="color-badge"></div>
   </header>
 
   <main class="app-main">
 
-    <!-- Board Section -->
     <section class="board-section">
       <div class="board-topbar">
-        <div id="status-bar" class="status-bar">Connecting...</div>
+        <div id="status-bar" class="status-bar">Starting…</div>
         <button id="new-game-btn" class="btn-primary">New Game</button>
       </div>
-
       <div class="board-area">
         <div class="rank-labels" id="rank-labels"></div>
         <div id="board" class="board"></div>
       </div>
-
       <div class="file-labels" id="file-labels"></div>
     </section>
 
-    <!-- Side Panel -->
     <aside class="side-panel">
-
       <div class="panel-box move-history-box">
         <div class="panel-box-header">
           <h3>Move History</h3>
@@ -63,18 +80,13 @@
           <button class="quick-btn" data-msg="Explain the current position">Explain</button>
         </div>
         <form id="chat-form" class="chat-form">
-          <input type="text" id="chat-input" class="chat-input" placeholder="Ask your coach..." autocomplete="off" />
+          <input type="text" id="chat-input" class="chat-input" placeholder="Ask your coach…" autocomplete="off" />
           <button type="submit" class="btn-send">↑</button>
         </form>
       </div>
-
     </aside>
   </main>
 
-  <!--
-    Load script.js as an ES module so it can import Chess from the CDN.
-    The CDN build uses ES module export syntax.
-  -->
   <script type="module" src="script.js"></script>
 </body>
 

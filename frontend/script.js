@@ -1,6 +1,7 @@
 /* =====================================================================
    Chess AI – script.js  (ES Module)
-   Human = White | Stockfish = Black
+   Human chooses White or Black at game start.
+   Board flips automatically to show human's pieces at the bottom.
    chess.js 0.13.4 API.
    ===================================================================== */
 
@@ -12,38 +13,91 @@ const GLYPHS = {
     wp: '♙', wr: '♖', wn: '♘', wb: '♗', wq: '♕', wk: '♔',
     bp: '♟', br: '♜', bn: '♞', bb: '♝', bq: '♛', bk: '♚',
 };
-const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+
+// a–h for White view; h–a for Black (flipped)
+const FILES_WHITE = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const FILES_BLACK = ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
 
 let chess = new Chess();
 let gameId = null;
+let humanColor = null;    // 'white' | 'black' — set when modal is resolved
 let selectedSquare = null;
 let legalTargets = [];
-let isWaiting = false;   // true while Stockfish is computing
+let isWaiting = false;
 let gameOver = false;
-let lastMove = null;    // {from, to}
+let lastMove = null;
 let moveCount = 0;
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
+// ─── Color picker modal ───────────────────────────────────────────────────────
 
-buildStaticLabels();
-renderBoard();
-setStatus('Connecting to server…', '');
-connectToBackend();
+const modal = document.getElementById('color-modal');
+
+// Show modal on page load
+showModal();
+
+function showModal() {
+    modal.classList.remove('hidden');
+}
+function hideModal() {
+    modal.classList.add('hidden');
+}
+
+document.getElementById('pick-white').addEventListener('click', () => startGame('white'));
+document.getElementById('pick-black').addEventListener('click', () => startGame('black'));
+
+async function startGame(color) {
+    hideModal();
+    humanColor = color;
+    chess = new Chess();
+    lastMove = null;
+    gameOver = false;
+    moveCount = 0;
+    clearSelection();
+
+    document.getElementById('move-list').innerHTML = '';
+    document.getElementById('move-count').textContent = '0';
+    document.getElementById('chat-messages').innerHTML = '';
+
+    // Update header badge
+    const badge = document.getElementById('color-badge');
+    badge.textContent = color === 'white' ? '♔ Playing as White' : '♚ Playing as Black';
+    badge.className = `color-badge ${color}`;
+
+    buildStaticLabels();
+    renderBoard();
+    setStatus('Connecting to server…', '');
+
+    await connectToBackend(color);
+}
 
 // ─── Backend ──────────────────────────────────────────────────────────────────
 
-async function connectToBackend() {
+async function connectToBackend(color) {
     try {
         const res = await fetch(`${API}/games/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ human_color: color }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         gameId = data.game_id;
-        gameOver = false;
+
+        // If playing Black, backend already made Stockfish's first White move
+        if (color === 'black' && data.engine_first_move) {
+            const sfFrom = data.engine_first_move.substring(0, 2);
+            const sfTo = data.engine_first_move.substring(2, 4);
+            const sfProm = data.engine_first_move.length > 4 ? data.engine_first_move[4] : 'q';
+            chess.move({ from: sfFrom, to: sfTo, promotion: sfProm });
+            lastMove = { from: sfFrom, to: sfTo };
+            addMoveToHistory(data.engine_first_move, 'Stockfish (White)');
+            renderBoard();
+        }
+
         updateStatus();
-        addChatMsg('coach', "Hello! I'm your chess coach. You play White — make a move, then ask me anything!");
+        addChatMsg('coach', color === 'white'
+            ? "Hello! You play White — move a pawn to start, then ask me anything!"
+            : "Hello! You play Black — Stockfish just opened for White. It's your turn!");
     } catch (err) {
         setStatus('Cannot reach backend. Is Django running on port 8000?', 'gameover');
         console.error('Backend error:', err);
@@ -53,17 +107,24 @@ async function connectToBackend() {
 // ─── Static labels ────────────────────────────────────────────────────────────
 
 function buildStaticLabels() {
+    // Rank labels: White view top=8, Black view top=1
     const rankContainer = document.getElementById('rank-labels');
     rankContainer.innerHTML = '';
-    for (let rank = 8; rank >= 1; rank--) {
+    const ranks = humanColor === 'black'
+        ? [1, 2, 3, 4, 5, 6, 7, 8]      // 1 at top for Black
+        : [8, 7, 6, 5, 4, 3, 2, 1];     // 8 at top for White
+    ranks.forEach(r => {
         const el = document.createElement('div');
         el.className = 'rank-label';
-        el.textContent = rank;
+        el.textContent = r;
         rankContainer.appendChild(el);
-    }
+    });
+
+    // File labels: a–h for White, h–a for Black
     const fileContainer = document.getElementById('file-labels');
     fileContainer.innerHTML = '';
-    FILES.forEach(f => {
+    const files = humanColor === 'black' ? FILES_BLACK : FILES_WHITE;
+    files.forEach(f => {
         const el = document.createElement('div');
         el.className = 'file-label';
         el.textContent = f;
@@ -77,11 +138,19 @@ function renderBoard() {
     const boardEl = document.getElementById('board');
     boardEl.innerHTML = '';
 
-    for (let rank = 8; rank >= 1; rank--) {
-        for (let fi = 0; fi < 8; fi++) {
-            const file = FILES[fi];
+    const flipped = humanColor === 'black';
+    const files = flipped ? FILES_BLACK : FILES_WHITE;
+    // ranks: White = 8 down to 1, Black = 1 up to 8
+    const ranks = flipped
+        ? [1, 2, 3, 4, 5, 6, 7, 8]
+        : [8, 7, 6, 5, 4, 3, 2, 1];
+
+    for (const rank of ranks) {
+        for (const file of files) {
             const sq = `${file}${rank}`;
-            const isLight = (fi + rank) % 2 === 0;  // h1 light ✓, a1 dark ✓
+            // Colour formula: same regardless of flip — a1 is always dark
+            const fi = FILES_WHITE.indexOf(file);
+            const isLight = (fi + rank) % 2 === 0;
 
             const el = document.createElement('div');
             el.className = `square ${isLight ? 'light' : 'dark'}`;
@@ -100,6 +169,7 @@ function renderBoard() {
             boardEl.appendChild(el);
         }
     }
+
     applyHighlights();
 }
 
@@ -118,29 +188,30 @@ function applyHighlights() {
     });
 }
 
-// ─── Click: only allow White moves ────────────────────────────────────────────
+// ─── Click interaction ────────────────────────────────────────────────────────
 
-function handleSquareClick(squareName) {
-    // Block all interaction while Stockfish is thinking, game is over, or it's Black's turn
-    if (isWaiting || gameOver || !gameId) return;
-    if (chess.turn() !== 'w') return;   // only human (White) can move
+function handleSquareClick(sq) {
+    if (isWaiting || gameOver || !gameId || !humanColor) return;
 
-    const piece = chess.get(squareName);
+    // Only allow moves when it's the human's turn
+    const myColor = humanColor === 'white' ? 'w' : 'b';
+    if (chess.turn() !== myColor) return;
+
+    const piece = chess.get(sq);
 
     if (selectedSquare) {
-        if (legalTargets.includes(squareName)) {
-            executePlayerMove(selectedSquare, squareName);
+        if (legalTargets.includes(sq)) {
+            executePlayerMove(selectedSquare, sq);
             clearSelection();
             return;
         }
-        if (selectedSquare === squareName) { clearSelection(); renderBoard(); return; }
-        if (piece && piece.color === 'w') { clearSelection(); selectSquare(squareName); renderBoard(); return; }
+        if (selectedSquare === sq) { clearSelection(); renderBoard(); return; }
+        if (piece && piece.color === myColor) { clearSelection(); selectSquare(sq); renderBoard(); return; }
         clearSelection(); renderBoard(); return;
     }
 
-    // Only allow selecting White's pieces
-    if (piece && piece.color === 'w') {
-        selectSquare(squareName);
+    if (piece && piece.color === myColor) {
+        selectSquare(sq);
         renderBoard();
     }
 }
@@ -149,7 +220,6 @@ function selectSquare(sq) {
     selectedSquare = sq;
     legalTargets = chess.moves({ square: sq, verbose: true }).map(m => m.to);
 }
-
 function clearSelection() {
     selectedSquare = null;
     legalTargets = [];
@@ -158,22 +228,23 @@ function clearSelection() {
 // ─── Move execution ───────────────────────────────────────────────────────────
 
 async function executePlayerMove(from, to) {
-    // Build UCI notation
     let uci = `${from}${to}`;
     const piece = chess.get(from);
+    const myColor = humanColor === 'white' ? 'w' : 'b';
     if (piece?.type === 'p' &&
-        ((piece.color === 'w' && to[1] === '8') || (piece.color === 'b' && to[1] === '1'))) {
-        uci += 'q'; // auto-promote to queen
+        ((myColor === 'w' && to[1] === '8') || (myColor === 'b' && to[1] === '1'))) {
+        uci += 'q';
     }
 
-    // Apply locally for immediate feedback
     const result = chess.move({ from, to, promotion: 'q' });
     if (!result) return;
 
     lastMove = { from, to };
     renderBoard();
-    addMoveToHistory(uci, 'You (White)');
-    setStatus('Stockfish (Black) is thinking…', 'thinking');
+
+    const colorLabel = humanColor === 'white' ? 'You (White)' : 'You (Black)';
+    addMoveToHistory(uci, colorLabel);
+    setStatus('Stockfish is thinking…', 'thinking');
     isWaiting = true;
 
     try {
@@ -184,20 +255,16 @@ async function executePlayerMove(from, to) {
         });
         const data = await res.json();
 
-        if (data.error) {
-            setStatus(`Error: ${data.error}`, 'gameover');
-            isWaiting = false;
-            return;
-        }
+        if (data.error) { setStatus(`Error: ${data.error}`, 'gameover'); isWaiting = false; return; }
 
-        // Apply Stockfish's (Black) response move
         if (data.engine_move) {
             const sfFrom = data.engine_move.substring(0, 2);
             const sfTo = data.engine_move.substring(2, 4);
             const sfProm = data.engine_move.length > 4 ? data.engine_move[4] : 'q';
             chess.move({ from: sfFrom, to: sfTo, promotion: sfProm });
             lastMove = { from: sfFrom, to: sfTo };
-            addMoveToHistory(data.engine_move, 'Stockfish (Black)');
+            const sfLabel = humanColor === 'white' ? 'Stockfish (Black)' : 'Stockfish (White)';
+            addMoveToHistory(data.engine_move, sfLabel);
         }
 
         renderBoard();
@@ -206,11 +273,11 @@ async function executePlayerMove(from, to) {
             gameOver = true;
             const resultMsg = data.result || `Game over — ${data.winner} wins!`;
             setStatus(resultMsg, 'gameover');
-            addChatMsg('coach', `Game over! ${resultMsg} Ask me to analyse the game if you'd like.`);
+            addChatMsg('coach', `Game over! ${resultMsg}`);
         } else {
-            // Back to human's turn — update status
             const inCheck = data.in_check || chess.in_check();
-            setStatus(inCheck ? 'Your turn (White) — Check! ⚠' : 'Your turn (White)', inCheck ? 'check' : '');
+            const yourTurn = humanColor === 'white' ? 'Your turn (White)' : 'Your turn (Black)';
+            setStatus(inCheck ? `${yourTurn} — Check! ⚠` : yourTurn, inCheck ? 'check' : '');
         }
     } catch (err) {
         setStatus('Connection error — is the backend running?', 'gameover');
@@ -220,19 +287,23 @@ async function executePlayerMove(from, to) {
     isWaiting = false;
 }
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
+// ─── Status ───────────────────────────────────────────────────────────────────
 
 function updateStatus() {
     if (gameOver || chess.game_over()) {
-        if (chess.in_checkmate()) {
-            setStatus(chess.turn() === 'w' ? 'Checkmate — Stockfish wins!' : 'Checkmate — You win! 🎉', 'gameover');
-        } else {
-            setStatus('Game drawn!', 'gameover');
-        }
-        return;
+        setStatus('Game over!', 'gameover'); return;
     }
-    setStatus(chess.in_check() ? 'Your turn (White) — Check! ⚠' : 'Your turn (White)',
-        chess.in_check() ? 'check' : '');
+    const myColor = humanColor === 'white' ? 'w' : 'b';
+    const yourTurn = humanColor === 'white' ? 'Your turn (White)' : 'Your turn (Black)';
+    const sfTurn = humanColor === 'white' ? 'Stockfish (Black) thinking…' : 'Stockfish (White) thinking…';
+
+    if (chess.turn() !== myColor) {
+        setStatus(sfTurn, 'thinking');
+    } else if (chess.in_check()) {
+        setStatus(`${yourTurn} — Check! ⚠`, 'check');
+    } else {
+        setStatus(yourTurn, '');
+    }
 }
 
 function setStatus(msg, cls) {
@@ -247,7 +318,7 @@ function addMoveToHistory(uci, player) {
     moveCount++;
     const list = document.getElementById('move-list');
     const item = document.createElement('div');
-    const isHuman = player.includes('White') || player.includes('You');
+    const isHuman = player.startsWith('You');
     item.className = `move-item ${isHuman ? 'user-move' : 'stockfish-move'}`;
     item.innerHTML = `
     <span class="move-num">${moveCount}</span>
@@ -272,7 +343,7 @@ function addChatMsg(role, text) {
 }
 
 async function sendChat(message) {
-    if (!gameId) { addChatMsg('coach', 'No game active yet — wait a moment.'); return; }
+    if (!gameId) { addChatMsg('coach', 'No game active yet.'); return; }
     addChatMsg('user', message);
     const thinking = addChatMsg('thinking', '…thinking…');
     try {
@@ -290,21 +361,11 @@ async function sendChat(message) {
     }
 }
 
-// ─── New Game ─────────────────────────────────────────────────────────────────
+// ─── New Game button ──────────────────────────────────────────────────────────
 
-document.getElementById('new-game-btn').addEventListener('click', async () => {
+document.getElementById('new-game-btn').addEventListener('click', () => {
     if (isWaiting) return;
-    chess = new Chess();
-    lastMove = null;
-    gameOver = false;
-    moveCount = 0;
-    clearSelection();
-    document.getElementById('move-list').innerHTML = '';
-    document.getElementById('move-count').textContent = '0';
-    document.getElementById('chat-messages').innerHTML = '';
-    renderBoard();
-    setStatus('Creating new game…', '');
-    await connectToBackend();
+    showModal(); // Let user pick color again
 });
 
 // ─── Chat form ────────────────────────────────────────────────────────────────
