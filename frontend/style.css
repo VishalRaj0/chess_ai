@@ -420,6 +420,31 @@ body {
     transform: translateY(0);
 }
 
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+.btn-secondary {
+    padding: 8px 18px;
+    background: #21262d;
+    color: #c9d1d9;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 600;
+    border: 1px solid rgba(240, 246, 252, 0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: #30363d;
+    border-color: #8b949e;
+}
+
 .btn-danger {
     padding: 8px 18px;
     background: linear-gradient(135deg, #da3633, #f85149);

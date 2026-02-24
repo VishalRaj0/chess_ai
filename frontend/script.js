@@ -367,18 +367,26 @@ async function sendChat(message) {
     }
 }
 
-// ─── Topbar Buttons ─────────────────────────────────────────────────────────
+// ─── Topbar Buttons & Surrender Modal ─────────────────────────────────────────
 
 document.getElementById('new-game-btn').addEventListener('click', () => {
     if (isWaiting) return;
     showModal(); // Let user pick color again
 });
 
-document.getElementById('surrender-btn').addEventListener('click', surrenderGame);
+const surrenderModal = document.getElementById('surrender-modal');
 
-async function surrenderGame() {
+document.getElementById('surrender-btn').addEventListener('click', () => {
     if (!gameId || gameOver || isWaiting) return;
-    if (!confirm("Are you sure you want to surrender?")) return;
+    surrenderModal.classList.remove('hidden');
+});
+
+document.getElementById('btn-cancel-surrender').addEventListener('click', () => {
+    surrenderModal.classList.add('hidden');
+});
+
+document.getElementById('btn-confirm-surrender').addEventListener('click', async () => {
+    surrenderModal.classList.add('hidden');
 
     isWaiting = true;
     try {
@@ -403,7 +411,7 @@ async function surrenderGame() {
         console.error(err);
     }
     isWaiting = false;
-}
+});
 
 // ─── Chat form ────────────────────────────────────────────────────────────────
 
