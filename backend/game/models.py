@@ -12,6 +12,8 @@ class Game(models.Model):
     is_finished = models.BooleanField(default=False)
     winner = models.CharField(max_length=10, null=True, blank=True)  # 'user','stockfish','draw'
     human_color = models.CharField(max_length=5, default='white')    # 'white' or 'black'
+    difficulty = models.IntegerField(default=10)                     # Stockfish skill level 1-20
+    game_type = models.CharField(max_length=20, default='competitive') # 'practice' or 'competitive'
 
     class Meta:
         ordering = ['-created_at']

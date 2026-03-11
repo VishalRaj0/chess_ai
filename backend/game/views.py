@@ -1,7 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
 from stockfish import Stockfish
 from .models import Game, Move
 import chess
@@ -11,9 +14,9 @@ STOCKFISH_PATH = "C:\\Users\\SUBHAM\\Downloads\\stockfish-windows-x86-64-avx2\\s
 STOCKFISH_SKILL = 10
 
 
-def get_stockfish():
+def get_stockfish(skill_level=STOCKFISH_SKILL):
     sf = Stockfish(path=STOCKFISH_PATH)
-    sf.set_skill_level(STOCKFISH_SKILL)
+    sf.set_skill_level(skill_level)
     return sf
 
 
@@ -33,14 +36,24 @@ class CreateGame(APIView):
         human_color = request.data.get('human_color', 'white')
         if human_color not in ('white', 'black'):
             human_color = 'white'
+            
+        difficulty = int(request.data.get('difficulty', 10))
+        game_type = request.data.get('game_type', 'competitive')
+        if game_type not in ('practice', 'competitive'):
+            game_type = 'competitive'
 
-        game = Game.objects.create(human_color=human_color)
+        game = Game.objects.create(
+            human_color=human_color,
+            difficulty=difficulty,
+            game_type=game_type,
+            user=request.user if request.user.is_authenticated else None
+        )
 
         engine_first_move = None
 
         # If human plays Black → Stockfish (White) goes first immediately
         if human_color == 'black':
-            sf = get_stockfish()
+            sf = get_stockfish(game.difficulty)
             sf.set_position([])
             engine_first_move = sf.get_best_move()
 
@@ -62,8 +75,10 @@ class CreateGame(APIView):
             "game_id": game.id,
             "fen": game.fen,
             "human_color": human_color,
+            "difficulty": game.difficulty,
+            "game_type": game.game_type,
             "engine_first_move": engine_first_move,
-            "message": f"New game created. You play as {'White' if human_color == 'white' else 'Black'}."
+            "message": f"New {game.game_type} game created. You play as {'White' if human_color == 'white' else 'Black'} at difficulty {game.difficulty}."
         }, status=status.HTTP_201_CREATED)
 
 
@@ -131,7 +146,7 @@ class PlayChess(APIView):
 
         # Ask Stockfish for its response
         all_moves = [m.move_notation for m in game.moves.order_by('move_number')]
-        sf = get_stockfish()
+        sf = get_stockfish(game.difficulty)
         sf.set_position(all_moves)
         engine_move_uci = sf.get_best_move()
 
@@ -201,6 +216,60 @@ class SurrenderGame(APIView):
         })
 
 
+# ─── Undo Move ───────────────────────────────────────────────────────────────
+
+class UndoMove(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        game_id = request.data.get("game_id")
+        if not game_id:
+            return Response({"error": "game_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            game = Game.objects.get(id=game_id)
+        except Game.DoesNotExist:
+            return Response({"error": "Game not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if game.game_type != 'practice':
+            return Response({"error": "Undo is only available in Practice mode"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if game.is_finished:
+            return Response({"error": "Cannot undo a finished game"}, status=status.HTTP_400_BAD_REQUEST)
+
+        moves = list(game.moves.order_by('move_number'))
+        
+        if not moves:
+            return Response({"error": "No moves to undo"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        num_moves_to_delete = 2
+        if len(moves) == 1 and game.human_color == 'black':
+            return Response({"error": "Cannot undo the engine's first move"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(moves) == 1 and game.human_color == 'white':
+            num_moves_to_delete = 1
+            
+        moves_to_keep = moves[:-num_moves_to_delete]
+        moves_to_delete = moves[-num_moves_to_delete:]
+        
+        board = chess.Board()
+        for m in moves_to_keep:
+            board.push(chess.Move.from_uci(m.move_notation))
+            
+        game.fen = board.fen()
+        game.save()
+        
+        for m in moves_to_delete:
+            m.delete()
+            
+        return Response({
+            "message": "Move undone successfully",
+            "fen": game.fen,
+            "game_over": False,
+            "winner": None,
+            "in_check": board.is_check()
+        })
+
+
 # ─── Get Game ─────────────────────────────────────────────────────────────────
 
 class GetGame(APIView):
@@ -230,11 +299,98 @@ class ListGames(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        games = Game.objects.all()[:50]
+        if request.user.is_authenticated:
+            games = Game.objects.filter(user=request.user).order_by('-created_at')[:50]
+        else:
+            games = Game.objects.filter(user__isnull=True).order_by('-created_at')[:50]
+            
         return Response({"games": [{"game_id": g.id, "is_finished": g.is_finished,
                                      "winner": g.winner, "human_color": g.human_color,
+                                     "difficulty": g.difficulty, "game_type": g.game_type,
                                      "move_count": g.moves.count(), "created_at": g.created_at}
                                     for g in games]})
+
+
+# ─── Auth & Profile ───────────────────────────────────────────────────────────
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get("username")
+        password = request.data.get("password")
+        
+        if not username or not password:
+            return Response({"error": "Username and password required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if User.objects.filter(username=username).exists():
+            return Response({"error": "Username already taken"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = User.objects.create_user(username=username, password=password)
+        token, _ = Token.objects.get_or_create(user=user)
+        
+        return Response({"token": token.key, "username": user.username}, status=status.HTTP_201_CREATED)
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get("username")
+        password = request.data.get("password")
+        
+        user = authenticate(username=username, password=password)
+        if user:
+            token, _ = Token.objects.get_or_create(user=user)
+            return Response({"token": token.key, "username": user.username})
+        else:
+            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        request.user.auth_token.delete()
+        return Response({"message": "Logged out successfully"})
+
+
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        games = Game.objects.filter(user=user)
+        total_games = games.count()
+        wins = games.filter(winner='user').count()
+        losses = games.filter(winner='stockfish').count()
+        draws = games.filter(winner='draw').count()
+        
+        history = []
+        for g in games.order_by('-created_at')[:20]:
+            history.append({
+                "game_id": g.id,
+                "created_at": g.created_at,
+                "human_color": g.human_color,
+                "is_finished": g.is_finished,
+                "winner": g.winner,
+                "move_count": g.moves.count(),
+                "difficulty": g.difficulty,
+                "game_type": g.game_type,
+                "fen": g.fen
+            })
+            
+        return Response({
+            "username": user.username,
+            "date_joined": user.date_joined,
+            "stats": {
+                "total_games": total_games,
+                "wins": wins,
+                "losses": losses,
+                "draws": draws,
+            },
+            "history": history
+        })
 
 
 # ─── Chatbot ──────────────────────────────────────────────────────────────────

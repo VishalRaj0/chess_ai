@@ -27,10 +27,28 @@ let isWaiting = false;
 let gameOver = false;
 let lastMove = null;
 let moveCount = 0;
+let currentDifficulty = 10;
+let currentGameType = 'competitive';
+
+// Auth State
+let authToken = localStorage.getItem('chess_ai_token');
+let currentUsername = localStorage.getItem('chess_ai_username');
 
 // ─── Color picker modal ───────────────────────────────────────────────────────
 
 const modal = document.getElementById('color-modal');
+const difficultySlider = document.getElementById('difficulty-slider');
+const difficultyDisplay = document.getElementById('difficulty-display');
+
+// Update difficulty display live
+if (difficultySlider && difficultyDisplay) {
+    difficultySlider.addEventListener('input', (e) => {
+        difficultyDisplay.textContent = e.target.value;
+    });
+}
+
+// Update UI based on initial auth state
+updateAuthUI();
 
 // Show modal on page load
 showModal();
@@ -58,10 +76,30 @@ async function startGame(color) {
     document.getElementById('move-count').textContent = '0';
     document.getElementById('chat-messages').innerHTML = '';
 
+    // Read difficulty from slider
+    const diffValue = difficultySlider ? difficultySlider.value : 10;
+
+    // Read game type
+    const typeSelector = document.querySelector('input[name="game_type"]:checked');
+    currentGameType = typeSelector ? typeSelector.value : 'competitive';
+    currentDifficulty = diffValue;
+
     // Update header badge
     const badge = document.getElementById('color-badge');
-    badge.textContent = color === 'white' ? '♔ Playing as White' : '♚ Playing as Black';
+    badge.textContent = color === 'white'
+        ? `♔ Playing as White (Level ${diffValue} - ${currentGameType})`
+        : `♚ Playing as Black (Level ${diffValue} - ${currentGameType})`;
     badge.className = `color-badge ${color}`;
+
+    // Show/hide Undo
+    const undoBtn = document.getElementById('undo-btn');
+    if (undoBtn) {
+        if (currentGameType === 'practice') {
+            undoBtn.classList.remove('hidden');
+        } else {
+            undoBtn.classList.add('hidden');
+        }
+    }
 
     document.getElementById('new-game-btn').classList.remove('btn-highlight');
 
@@ -69,17 +107,25 @@ async function startGame(color) {
     renderBoard();
     setStatus('Connecting to server…', '');
 
-    await connectToBackend(color);
+    await connectToBackend(color, diffValue);
 }
 
 // ─── Backend ──────────────────────────────────────────────────────────────────
 
-async function connectToBackend(color) {
+function getAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+        headers['Authorization'] = `Token ${authToken}`;
+    }
+    return headers;
+}
+
+async function connectToBackend(color, difficulty) {
     try {
         const res = await fetch(`${API}/games/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ human_color: color }),
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ human_color: color, difficulty: difficulty, game_type: currentGameType }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -254,7 +300,7 @@ async function executePlayerMove(from, to) {
     try {
         const res = await fetch(`${API}/play/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ game_id: gameId, move: uci }),
         });
         const data = await res.json();
@@ -355,7 +401,7 @@ async function sendChat(message) {
     try {
         const res = await fetch(`${API}/chat/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ game_id: gameId, message }),
         });
         const data = await res.json();
@@ -392,7 +438,7 @@ document.getElementById('btn-confirm-surrender').addEventListener('click', async
     try {
         const res = await fetch(`${API}/surrender/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ game_id: gameId }),
         });
         const data = await res.json();
@@ -413,6 +459,36 @@ document.getElementById('btn-confirm-surrender').addEventListener('click', async
     isWaiting = false;
 });
 
+document.getElementById('undo-btn').addEventListener('click', async () => {
+    if (!gameId || gameOver || isWaiting) return;
+
+    setStatus('Undoing move...', 'thinking');
+    isWaiting = true;
+
+    try {
+        const res = await fetch(`${API}/undo/`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ game_id: gameId })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+            setStatus(data.error, 'gameover');
+            isWaiting = false;
+            return;
+        }
+
+        // Successfully undid, restore state via resumeGame
+        await resumeGame(gameId, currentDifficulty, currentGameType);
+        addChatMsg('coach', 'Move undid. Try again!');
+    } catch (err) {
+        setStatus('Failed to undo', 'gameover');
+        console.error(err);
+    }
+    isWaiting = false;
+});
+
 // ─── Chat form ────────────────────────────────────────────────────────────────
 
 document.getElementById('chat-form').addEventListener('submit', e => {
@@ -427,3 +503,297 @@ document.getElementById('chat-form').addEventListener('submit', e => {
 document.querySelectorAll('.quick-btn').forEach(btn => {
     btn.addEventListener('click', () => sendChat(btn.dataset.msg));
 });
+
+// ─── Authentication & Profile ─────────────────────────────────────────────────
+
+const authModal = document.getElementById('auth-modal');
+const btnShowLogin = document.getElementById('btn-show-login');
+const btnCloseAuth = document.getElementById('btn-close-auth');
+const authForm = document.getElementById('auth-form');
+const authSwitchLink = document.getElementById('auth-switch-link');
+const authTitle = document.getElementById('auth-title');
+const authSubtitle = document.getElementById('auth-subtitle');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authSwitchText = document.getElementById('auth-switch-text');
+const authError = document.getElementById('auth-error');
+
+let isLoginMode = true;
+
+btnShowLogin.addEventListener('click', () => {
+    authModal.classList.remove('hidden');
+    resetAuthForm();
+});
+
+btnCloseAuth.addEventListener('click', () => {
+    authModal.classList.add('hidden');
+});
+
+authSwitchLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    isLoginMode = !isLoginMode;
+    if (isLoginMode) {
+        authTitle.textContent = 'Login';
+        authSubtitle.textContent = 'Sign in to track your stats';
+        authSubmitBtn.textContent = 'Login';
+        authSwitchText.textContent = "Don't have an account?";
+        authSwitchLink.textContent = 'Register';
+    } else {
+        authTitle.textContent = 'Register';
+        authSubtitle.textContent = 'Create an account to track your stats';
+        authSubmitBtn.textContent = 'Register';
+        authSwitchText.textContent = 'Already have an account?';
+        authSwitchLink.textContent = 'Login';
+    }
+    resetAuthForm();
+});
+
+function resetAuthForm() {
+    authForm.reset();
+    authError.classList.add('hidden');
+    authError.textContent = '';
+}
+
+authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('auth-username').value.trim();
+    const password = document.getElementById('auth-password').value.trim();
+
+    authError.classList.add('hidden');
+    authSubmitBtn.disabled = true;
+    authSubmitBtn.textContent = 'Please wait...';
+
+    const endpoint = isLoginMode ? '/auth/login/' : '/auth/register/';
+
+    try {
+        const res = await fetch(`${API}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            throw new Error(data.error || 'Authentication failed');
+        }
+
+        authToken = data.token;
+        currentUsername = data.username;
+        localStorage.setItem('chess_ai_token', authToken);
+        localStorage.setItem('chess_ai_username', currentUsername);
+
+        updateAuthUI();
+        authModal.classList.add('hidden');
+
+    } catch (err) {
+        authError.textContent = err.message;
+        authError.classList.remove('hidden');
+    } finally {
+        authSubmitBtn.disabled = false;
+        authSubmitBtn.textContent = isLoginMode ? 'Login' : 'Register';
+    }
+});
+
+function updateAuthUI() {
+    const authButtons = document.getElementById('auth-buttons');
+    const userMenu = document.getElementById('user-menu');
+    const userGreeting = document.getElementById('user-greeting');
+
+    if (authToken && currentUsername) {
+        authButtons.classList.add('hidden');
+        userMenu.classList.remove('hidden');
+        userGreeting.textContent = `Hi, ${currentUsername}`;
+    } else {
+        authButtons.classList.remove('hidden');
+        userMenu.classList.add('hidden');
+    }
+}
+
+// ─── Profile Modal ────────────────────────────────────────────────────────────
+
+const profileModal = document.getElementById('profile-modal');
+const btnShowProfile = document.getElementById('btn-show-profile');
+const btnCloseProfile = document.getElementById('btn-close-profile');
+const btnLogout = document.getElementById('btn-logout');
+
+btnShowProfile.addEventListener('click', async () => {
+    profileModal.classList.remove('hidden');
+    await loadProfileData();
+});
+
+btnCloseProfile.addEventListener('click', () => {
+    profileModal.classList.add('hidden');
+});
+
+btnLogout.addEventListener('click', async () => {
+    try {
+        await fetch(`${API}/auth/logout/`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+    } catch (e) {
+        console.error('Logout error:', e);
+    }
+
+    authToken = null;
+    currentUsername = null;
+    localStorage.removeItem('chess_ai_token');
+    localStorage.removeItem('chess_ai_username');
+
+    updateAuthUI();
+    profileModal.classList.add('hidden');
+});
+
+async function loadProfileData() {
+    try {
+        const res = await fetch(`${API}/profile/`, {
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error);
+
+        document.getElementById('profile-username').textContent = `${data.username}'s Profile`;
+        document.getElementById('stat-total').textContent = data.stats.total_games;
+        document.getElementById('stat-wins').textContent = data.stats.wins;
+        document.getElementById('stat-losses').textContent = data.stats.losses;
+        document.getElementById('stat-draws').textContent = data.stats.draws;
+
+        const historyList = document.getElementById('history-list');
+        historyList.innerHTML = '';
+
+        if (data.history.length === 0) {
+            historyList.innerHTML = '<p style="color:#8b949e;text-align:center;padding:1rem;">No games played yet.</p>';
+            return;
+        }
+
+        data.history.forEach(game => {
+            const date = new Date(game.created_at).toLocaleDateString();
+            let resultClass = '';
+            let resultText = '';
+
+            if (!game.is_finished) {
+                resultClass = 'result-draw';
+                resultText = 'In Progress';
+            } else if (game.winner === 'draw') {
+                resultClass = 'result-draw';
+                resultText = 'Draw';
+            } else if (game.winner === 'user') {
+                resultClass = 'result-win';
+                resultText = 'Victory';
+            } else {
+                resultClass = 'result-loss';
+                resultText = 'Defeat';
+            }
+
+            const colorText = game.human_color === 'white' ? 'White' : 'Black';
+            const modeText = game.game_type === 'practice' ? 'Practice' : 'Competitive';
+
+            const item = document.createElement('div');
+            item.className = 'history-item';
+
+            const btnHtml = !game.is_finished ? `<button class="btn-resume">Resume</button>` : '';
+
+            item.innerHTML = `
+                <div class="history-info">
+                    <span class="history-date">${date}</span>
+                    <span class="history-details">Played as ${colorText} • ${modeText} • Lvl ${game.difficulty} • ${game.move_count} moves</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="history-result ${resultClass}">${resultText}</div>
+                    ${btnHtml}
+                </div>
+            `;
+
+            if (!game.is_finished) {
+                const btn = item.querySelector('.btn-resume');
+                if (btn) btn.addEventListener('click', () => {
+                    resumeGame(game.game_id, game.difficulty, game.game_type);
+                });
+            }
+
+            historyList.appendChild(item);
+        });
+    } catch (e) {
+        console.error('Failed to load profile:', e);
+    }
+}
+
+async function resumeGame(id, difficulty, gameType) {
+    profileModal.classList.add('hidden');
+    setStatus('Loading game...', '');
+
+    try {
+        const res = await fetch(`${API}/games/${id}/`, {
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        gameId = data.game_id;
+        humanColor = data.human_color;
+        gameOver = data.is_finished;
+        currentDifficulty = difficulty;
+        currentGameType = gameType;
+
+        chess.load(data.fen);
+
+        // reconstruct move history
+        document.getElementById('move-list').innerHTML = '';
+        moveCount = 0;
+        lastMove = null;
+
+        data.moves.forEach(m => {
+            const isHuman = m.player === 'user';
+            moveCount++;
+            const list = document.getElementById('move-list');
+            const item = document.createElement('div');
+            item.className = `move-item ${isHuman ? 'user-move' : 'stockfish-move'}`;
+            item.innerHTML = `
+            <span class="move-num">${moveCount}</span>
+            <span class="move-uci">${m.move}</span>
+            <span class="move-who">${isHuman ? 'You' : 'CPU'}</span>
+            `;
+            list.appendChild(item);
+
+            lastMove = { from: m.move.substring(0, 2), to: m.move.substring(2, 4) };
+        });
+        const mlist = document.getElementById('move-list');
+        mlist.scrollTop = mlist.scrollHeight;
+
+        document.getElementById('move-count').textContent = moveCount;
+        document.getElementById('chat-messages').innerHTML = ''; // clear chat for resumed session
+
+        const badge = document.getElementById('color-badge');
+        badge.textContent = humanColor === 'white'
+            ? `♔ Playing as White (Level ${difficulty} - ${gameType})`
+            : `♚ Playing as Black (Level ${difficulty} - ${gameType})`;
+        badge.className = `color-badge ${humanColor}`;
+
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) {
+            if (gameType === 'practice' && !gameOver) {
+                undoBtn.classList.remove('hidden');
+            } else {
+                undoBtn.classList.add('hidden');
+            }
+        }
+
+        document.getElementById('new-game-btn').classList.remove('btn-highlight');
+        if (!gameOver) {
+            document.getElementById('surrender-btn').classList.remove('hidden');
+        } else {
+            document.getElementById('surrender-btn').classList.add('hidden');
+        }
+
+        clearSelection();
+        buildStaticLabels();
+        renderBoard();
+        updateStatus();
+        hideModal(); // in case new game modal was open
+
+    } catch (e) {
+        console.error("Resume failed:", e);
+        setStatus('Failed to resume game', 'gameover');
+    }
+}

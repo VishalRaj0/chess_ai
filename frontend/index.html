@@ -17,6 +17,29 @@
     <div class="modal-card">
       <h2 class="modal-title">♟ New Game</h2>
       <p class="modal-subtitle">Choose your side</p>
+
+      <div class="difficulty-selector">
+        <div class="difficulty-header">
+          <span class="difficulty-label">Stockfish Level</span>
+          <span class="difficulty-value" id="difficulty-display">10</span>
+        </div>
+        <input type="range" id="difficulty-slider" min="0" max="20" value="10" class="styled-slider">
+        <div class="difficulty-markers">
+          <span>0 (Easy)</span>
+          <span>20 (Hard)</span>
+        </div>
+      </div>
+
+      <div class="game-type-selector">
+        <label class="game-type-label">Game Mode</label>
+        <div class="game-type-options">
+          <input type="radio" id="type-practice" name="game_type" value="practice" checked>
+          <label for="type-practice" class="type-btn">Practice (Undo Allowed)</label>
+          <input type="radio" id="type-competitive" name="game_type" value="competitive">
+          <label for="type-competitive" class="type-btn">Competitive (No Undo)</label>
+        </div>
+      </div>
+
       <div class="color-choices">
         <button class="color-choice" id="pick-white">
           <span class="choice-piece">♔</span>
@@ -44,6 +67,60 @@
     </div>
   </div>
 
+  <!-- ── Auth Modal ─────────────────────────────────────────── -->
+  <div id="auth-modal" class="modal-backdrop hidden">
+    <div class="modal-card auth-card">
+      <h2 class="modal-title" id="auth-title">Login</h2>
+      <p class="modal-subtitle" id="auth-subtitle">Sign in to track your stats</p>
+      <form id="auth-form" class="auth-form">
+        <input type="text" id="auth-username" class="auth-input" placeholder="Username" required />
+        <input type="password" id="auth-password" class="auth-input" placeholder="Password" required />
+        <p id="auth-error" class="auth-error hidden"></p>
+        <button type="submit" id="auth-submit-btn" class="btn-primary auth-submit">Login</button>
+      </form>
+      <p class="auth-switch">
+        <span id="auth-switch-text">Don't have an account?</span>
+        <a href="#" id="auth-switch-link">Register</a>
+      </p>
+      <button id="btn-close-auth" class="btn-close-modal">✕</button>
+    </div>
+  </div>
+
+  <!-- ── Profile Modal ──────────────────────────────────────── -->
+  <div id="profile-modal" class="modal-backdrop hidden">
+    <div class="modal-card profile-card" style="max-width: 600px; width: 90%;">
+      <div class="profile-header">
+        <h2 class="modal-title" id="profile-username">User Profile</h2>
+        <button id="btn-close-profile" class="btn-close-modal">✕</button>
+      </div>
+      <div class="profile-stats">
+        <div class="stat-box">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">Games Played</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-wins" style="color: #10b981;">0</div>
+          <div class="stat-label">Wins</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-losses" style="color: #ef4444;">0</div>
+          <div class="stat-label">Losses</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-draws" style="color: #f59e0b;">0</div>
+          <div class="stat-label">Draws</div>
+        </div>
+      </div>
+      <h3 class="history-title">Game History</h3>
+      <div class="history-list-container">
+        <div id="history-list" class="history-list"></div>
+      </div>
+      <div class="profile-actions">
+        <button id="btn-logout" class="btn-danger">Logout</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── App ───────────────────────────────────────────────── -->
   <header class="app-header">
     <div class="header-left">
@@ -53,7 +130,16 @@
         <p>Play against Stockfish · Get tips from your coach</p>
       </div>
     </div>
-    <div id="color-badge" class="color-badge"></div>
+    <div class="header-right">
+      <div id="color-badge" class="color-badge"></div>
+      <div id="auth-buttons" class="auth-buttons">
+        <button id="btn-show-login" class="btn-secondary auth-btn">Login / Register</button>
+      </div>
+      <div id="user-menu" class="user-menu hidden">
+        <span id="user-greeting" class="user-greeting">Hi, Player</span>
+        <button id="btn-show-profile" class="btn-primary auth-btn">Profile</button>
+      </div>
+    </div>
   </header>
 
   <main class="app-main">
@@ -62,6 +148,7 @@
       <div class="board-topbar">
         <div id="status-bar" class="status-bar">Starting…</div>
         <div class="topbar-actions">
+          <button id="undo-btn" class="btn-secondary hidden" style="margin-right: 10px;">Undo Move</button>
           <button id="surrender-btn" class="btn-danger hidden">Surrender</button>
           <button id="new-game-btn" class="btn-primary">New Game</button>
         </div>
